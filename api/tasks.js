@@ -1,18 +1,19 @@
 const AIRTABLE_API_URL = 'https://api.airtable.com/v0';
-const FIELD_NAMES = {
-  title: 'Title',
-  notes: 'Notes',
-  aspect: 'Aspect',
-  area: 'Area',
-  status: 'Status',
-  priority: 'Priority',
-  due_date: 'Due Date',
-  tags: 'Tags',
-  subtasks: 'Subtasks',
-  is_recurring: 'Recurring',
-  created_at: 'Created At',
-  updated_at: 'Updated At',
-  completed_at: 'Completed At',
+const AIRTABLE_META_URL = 'https://api.airtable.com/v0/meta';
+const FIELD_ALIASES = {
+  title: ['Title', 'Name', 'Task', 'Task Name', 'Summary'],
+  notes: ['Notes', 'Description', 'Details', 'Context'],
+  aspect: ['Aspect', 'Category', 'Type', 'Domain'],
+  area: ['Area', 'Project', 'Area or Project', 'Project Name'],
+  status: ['Status', 'State', 'Stage'],
+  priority: ['Priority', 'Importance'],
+  due_date: ['Due Date', 'Due', 'Deadline', 'Date'],
+  tags: ['Tags', 'Tag', 'Labels'],
+  subtasks: ['Subtasks', 'Sub Tasks', 'Checklist'],
+  is_recurring: ['Recurring', 'Repeating', 'Repeat'],
+  created_at: ['Created At', 'Created', 'Created Time'],
+  updated_at: ['Updated At', 'Updated', 'Last Modified'],
+  completed_at: ['Completed At', 'Completed', 'Done At'],
 };
 
 function requireConfig() {
@@ -40,6 +41,10 @@ function airtableUrl(config, recordId = '') {
   return `${AIRTABLE_API_URL}/${config.baseId}/${table}${suffix}`;
 }
 
+function metadataUrl(config) {
+  return `${AIRTABLE_META_URL}/bases/${config.baseId}/tables`;
+}
+
 function parseList(value) {
   if (Array.isArray(value)) return value;
   if (!value) return [];
@@ -60,44 +65,73 @@ function parseJson(value, fallback) {
   }
 }
 
-function recordToTask(record) {
+function normalizeOption(value, fallback, allowed) {
+  if (!value) return fallback;
+  const normalized = String(value).trim().toLowerCase();
+  return allowed.includes(normalized) ? normalized : fallback;
+}
+
+function getField(fields, fieldMap, key) {
+  const fieldName = fieldMap[key];
+  return fieldName ? fields[fieldName] : undefined;
+}
+
+function setField(fields, fieldMap, key, value) {
+  const fieldName = fieldMap[key];
+  if (fieldName) fields[fieldName] = value;
+}
+
+function recordToTask(record, fieldMap) {
   const fields = record.fields || {};
   const now = new Date().toISOString();
 
   return {
     id: record.id,
-    title: fields[FIELD_NAMES.title] || '',
-    notes: fields[FIELD_NAMES.notes] || '',
-    aspect: fields[FIELD_NAMES.aspect] || 'personal',
-    area: fields[FIELD_NAMES.area] || '',
-    status: fields[FIELD_NAMES.status] || 'inbox',
-    priority: fields[FIELD_NAMES.priority] || 'medium',
-    due_date: fields[FIELD_NAMES.due_date] || '',
-    tags: parseList(fields[FIELD_NAMES.tags]),
-    subtasks: parseJson(fields[FIELD_NAMES.subtasks], []),
-    is_recurring: Boolean(fields[FIELD_NAMES.is_recurring]),
-    created_at: fields[FIELD_NAMES.created_at] || now,
-    updated_at: fields[FIELD_NAMES.updated_at] || now,
-    completed_at: fields[FIELD_NAMES.completed_at] || null,
+    title: getField(fields, fieldMap, 'title') || '',
+    notes: getField(fields, fieldMap, 'notes') || '',
+    aspect: normalizeOption(getField(fields, fieldMap, 'aspect'), 'personal', [
+      'personal',
+      'professional',
+    ]),
+    area: getField(fields, fieldMap, 'area') || '',
+    status: normalizeOption(getField(fields, fieldMap, 'status'), 'inbox', [
+      'inbox',
+      'today',
+      'scheduled',
+      'waiting',
+      'done',
+    ]),
+    priority: normalizeOption(getField(fields, fieldMap, 'priority'), 'medium', [
+      'low',
+      'medium',
+      'high',
+    ]),
+    due_date: getField(fields, fieldMap, 'due_date') || '',
+    tags: parseList(getField(fields, fieldMap, 'tags')),
+    subtasks: parseJson(getField(fields, fieldMap, 'subtasks'), []),
+    is_recurring: Boolean(getField(fields, fieldMap, 'is_recurring')),
+    created_at: getField(fields, fieldMap, 'created_at') || now,
+    updated_at: getField(fields, fieldMap, 'updated_at') || now,
+    completed_at: getField(fields, fieldMap, 'completed_at') || null,
   };
 }
 
-function taskToFields(task) {
-  return {
-    [FIELD_NAMES.title]: task.title,
-    [FIELD_NAMES.notes]: task.notes || '',
-    [FIELD_NAMES.aspect]: task.aspect || 'personal',
-    [FIELD_NAMES.area]: task.area || '',
-    [FIELD_NAMES.status]: task.status || 'inbox',
-    [FIELD_NAMES.priority]: task.priority || 'medium',
-    [FIELD_NAMES.due_date]: task.due_date || null,
-    [FIELD_NAMES.tags]: (task.tags || []).join(', '),
-    [FIELD_NAMES.subtasks]: JSON.stringify(task.subtasks || []),
-    [FIELD_NAMES.is_recurring]: Boolean(task.is_recurring),
-    [FIELD_NAMES.created_at]: task.created_at || new Date().toISOString(),
-    [FIELD_NAMES.updated_at]: task.updated_at || new Date().toISOString(),
-    [FIELD_NAMES.completed_at]: task.completed_at || null,
-  };
+function taskToFields(task, fieldMap) {
+  const fields = {};
+  setField(fields, fieldMap, 'title', task.title);
+  setField(fields, fieldMap, 'notes', task.notes || '');
+  setField(fields, fieldMap, 'aspect', task.aspect || 'personal');
+  setField(fields, fieldMap, 'area', task.area || '');
+  setField(fields, fieldMap, 'status', task.status || 'inbox');
+  setField(fields, fieldMap, 'priority', task.priority || 'medium');
+  setField(fields, fieldMap, 'due_date', task.due_date || null);
+  setField(fields, fieldMap, 'tags', (task.tags || []).join(', '));
+  setField(fields, fieldMap, 'subtasks', JSON.stringify(task.subtasks || []));
+  setField(fields, fieldMap, 'is_recurring', Boolean(task.is_recurring));
+  setField(fields, fieldMap, 'created_at', task.created_at || new Date().toISOString());
+  setField(fields, fieldMap, 'updated_at', task.updated_at || new Date().toISOString());
+  setField(fields, fieldMap, 'completed_at', task.completed_at || null);
+  return fields;
 }
 
 async function callAirtable(config, path, options = {}) {
@@ -121,7 +155,41 @@ async function callAirtable(config, path, options = {}) {
   return payload;
 }
 
-async function listTasks(config) {
+async function getFieldMap(config) {
+  const payload = await callAirtable(config, metadataUrl(config));
+  const table = (payload.tables || []).find((item) => item.name === config.tableName);
+
+  if (!table) {
+    throw new Error(`Airtable table "${config.tableName}" was not found.`);
+  }
+
+  const names = new Set(table.fields.map((field) => field.name));
+  const fieldMap = {};
+
+  for (const [key, aliases] of Object.entries(FIELD_ALIASES)) {
+    const envName = process.env[`AIRTABLE_FIELD_${key.toUpperCase()}`];
+    if (envName && names.has(envName)) {
+      fieldMap[key] = envName;
+      continue;
+    }
+
+    const matched = aliases.find((alias) => names.has(alias));
+    if (matched) fieldMap[key] = matched;
+  }
+
+  const primaryField = table.fields.find((field) => field.id === table.primaryFieldId);
+  if (!fieldMap.title && primaryField) {
+    fieldMap.title = primaryField.name;
+  }
+
+  if (!fieldMap.title) {
+    throw new Error('Could not find a title/name field in your Airtable table.');
+  }
+
+  return fieldMap;
+}
+
+async function listTasks(config, fieldMap) {
   const tasks = [];
   let offset = '';
 
@@ -131,7 +199,7 @@ async function listTasks(config) {
     if (offset) url.searchParams.set('offset', offset);
 
     const payload = await callAirtable(config, url.toString());
-    tasks.push(...(payload.records || []).map(recordToTask));
+    tasks.push(...(payload.records || []).map((record) => recordToTask(record, fieldMap)));
     offset = payload.offset;
   } while (offset);
 
@@ -157,8 +225,10 @@ export default async function handler(req, res) {
   }
 
   try {
+    const fieldMap = await getFieldMap(config);
+
     if (req.method === 'GET') {
-      const tasks = await listTasks(config);
+      const tasks = await listTasks(config, fieldMap);
       send(res, 200, { tasks });
       return;
     }
@@ -168,9 +238,9 @@ export default async function handler(req, res) {
       const task = { ...req.body, created_at: now, updated_at: now };
       const payload = await callAirtable(config, airtableUrl(config), {
         method: 'POST',
-        body: JSON.stringify({ fields: taskToFields(task) }),
+        body: JSON.stringify({ fields: taskToFields(task, fieldMap) }),
       });
-      send(res, 200, { task: recordToTask(payload) });
+      send(res, 200, { task: recordToTask(payload, fieldMap) });
       return;
     }
 
@@ -178,9 +248,9 @@ export default async function handler(req, res) {
       const task = { ...req.body, updated_at: new Date().toISOString() };
       const payload = await callAirtable(config, airtableUrl(config, task.id), {
         method: 'PATCH',
-        body: JSON.stringify({ fields: taskToFields(task) }),
+        body: JSON.stringify({ fields: taskToFields(task, fieldMap) }),
       });
-      send(res, 200, { task: recordToTask(payload) });
+      send(res, 200, { task: recordToTask(payload, fieldMap) });
       return;
     }
 
