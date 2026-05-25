@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Archive,
   BriefcaseBusiness,
@@ -27,7 +27,7 @@ const navItems = [
   { id: 'personal', label: 'Personal', icon: UserRound },
   { id: 'professional', label: 'Work', icon: BriefcaseBusiness },
   { id: 'upcoming', label: 'Upcoming', icon: CalendarDays },
-  { id: 'settings', label: 'Settings', icon: Settings },
+  { id: 'settings', label: Settings },
 ];
 
 const emptyTask = {
