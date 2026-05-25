@@ -11,8 +11,8 @@ const FIELD_ALIASES = {
   tags: ['Tags', 'Tag', 'Labels'],
   subtasks: ['Subtasks', 'Sub Tasks', 'Checklist'],
   is_recurring: ['Recurring', 'Repeating', 'Repeat'],
-  created_at: ['Created At', 'Created', 'Created Time'],
-  updated_at: ['Updated At', 'Updated', 'Last Modified'],
+  created_at: [],
+  updated_at: [],
   completed_at: ['Completed At', 'Completed', 'Done At'],
 };
 
@@ -238,7 +238,7 @@ export default async function handler(req, res) {
       const task = { ...req.body, created_at: now, updated_at: now };
       const payload = await callAirtable(config, airtableUrl(config), {
         method: 'POST',
-        body: JSON.stringify({ fields: taskToFields(task, fieldMap) }),
+        body: JSON.stringify({ fields: taskToFields(task, fieldMap), typecast: true }),
       });
       send(res, 200, { task: recordToTask(payload, fieldMap) });
       return;
@@ -248,7 +248,7 @@ export default async function handler(req, res) {
       const task = { ...req.body, updated_at: new Date().toISOString() };
       const payload = await callAirtable(config, airtableUrl(config, task.id), {
         method: 'PATCH',
-        body: JSON.stringify({ fields: taskToFields(task, fieldMap) }),
+        body: JSON.stringify({ fields: taskToFields(task, fieldMap), typecast: true }),
       });
       send(res, 200, { task: recordToTask(payload, fieldMap) });
       return;
