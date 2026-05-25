@@ -75,7 +75,7 @@ const starterTasks = [
 ];
 
 const navItems = [
-  { id: 'today', label: 'Today', icon: Home },
+  { id: 'all', label: 'All', icon: Home },
   { id: 'personal', label: 'Personal', icon: UserRound },
   { id: 'professional', label: 'Work', icon: BriefcaseBusiness },
   { id: 'upcoming', label: 'Upcoming', icon: CalendarDays },
@@ -101,7 +101,7 @@ function App() {
   const [projects, setProjects] = useState([]);
   const [activities, setActivities] = useState([]);
   const [sourceFilter, setSourceFilter] = useState('all');
-  const [activeView, setActiveView] = useState('today');
+  const [activeView, setActiveView] = useState('all');
   const [search, setSearch] = useState('');
   const [aspectFilter, setAspectFilter] = useState('all');
   const [priorityFilter, setPriorityFilter] = useState('all');
@@ -164,6 +164,7 @@ function App() {
   const groups = useMemo(() => {
     const active = tasks.filter((task) => task.status !== 'done');
     return {
+      all: active,
       today: active.filter((task) => task.status === 'today' || task.due_date === today()),
       personal: active.filter((task) => task.aspect === 'personal'),
       professional: active.filter((task) => task.aspect === 'professional'),
@@ -391,6 +392,7 @@ function App() {
           sources={sources}
           projects={projects}
           activities={activities}
+          taskCount={tasks.length}
         />
       )}
     </main>
@@ -409,6 +411,7 @@ function SummaryCard({ label, value, icon: Icon, tone = '' }) {
 
 function ViewTabs({ activeView, counts, onChange }) {
   const tabs = [
+    ['all', 'All', counts.all.length],
     ['today', 'Today', counts.today.length],
     ['personal', 'Personal', counts.personal.length],
     ['professional', 'Work', counts.professional.length],
@@ -551,6 +554,7 @@ function SettingsPanel({
   sources,
   projects,
   activities,
+  taskCount,
 }) {
   return (
     <div className="drawer-backdrop">
@@ -573,7 +577,8 @@ function SettingsPanel({
               <h3>Airtable sources</h3>
               <p>
                 {sources.filter((source) => source.role === 'tasks').length} task source(s),{' '}
-                {projects.length} project record(s), {activities.length} done record(s).
+                {taskCount} task record(s), {projects.length} project record(s),{' '}
+                {activities.length} done record(s).
               </p>
             </div>
           </article>
