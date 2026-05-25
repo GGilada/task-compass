@@ -63,15 +63,18 @@ The Airtable token must stay server-side. The React app calls `/api/tasks`; it n
 Use `AIRTABLE_SOURCES` to connect more than one table or base:
 
 ```text
-Personal Tasks|appFirstBaseId|Tasks;Work Tasks|appSecondBaseId|Tasks
+Tasks|appBaseId|Tasks|tasks;Projects|appBaseId|Projects|projects;Things Done|appBaseId|Things that I did|activity
 ```
 
-Each source has three parts separated by `|`:
+Each source has four parts separated by `|`:
 
 - Display label shown in the app
 - Airtable base ID
 - Airtable table name
+- Role: `tasks`, `projects`, or `activity`
 
 Separate multiple sources with `;`.
+
+Only sources with the `tasks` role are shown as task records. `projects` and `activity` sources are used as related context.
 
 The older single-source variables `AIRTABLE_BASE_ID` and `AIRTABLE_TABLE_NAME` still work if `AIRTABLE_SOURCES` is not set.

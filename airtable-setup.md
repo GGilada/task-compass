@@ -49,7 +49,13 @@ The title field is required. Optional fields can be left out of Airtable; the ap
 Set `AIRTABLE_SOURCES` in Vercel:
 
 ```text
-Personal Tasks|appFirstBaseId|Tasks;Work Tasks|appSecondBaseId|Tasks
+Tasks|appBaseId|Tasks|tasks;Projects|appBaseId|Projects|projects;Things Done|appBaseId|Things that I did|activity
 ```
 
 The token must have access to every base listed in `AIRTABLE_SOURCES`.
+
+Roles matter:
+
+- `tasks`: records become tasks in the app.
+- `projects`: records are used as project context for tasks.
+- `activity`: records from tables like `Things that I did` are counted as completed activity related to tasks.
