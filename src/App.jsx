@@ -39,6 +39,8 @@ const blankTask = {
   tags: [],
   subtasks: [],
   is_recurring: false,
+  source_id: '',
+  source_label: '',
 };
 
 const starterTasks = [
@@ -92,6 +94,8 @@ function isOverdue(task) {
 
 function App() {
   const [tasks, setTasks] = useState([]);
+  const [sources, setSources] = useState([]);
+  const [sourceFilter, setSourceFilter] = useState('all');
   const [activeView, setActiveView] = useState('today');
   const [search, setSearch] = useState('');
   const [aspectFilter, setAspectFilter] = useState('all');
@@ -121,8 +125,9 @@ function App() {
     setMessage('');
 
     try {
-      const remoteTasks = await fetchTasks(accessCode);
-      setTasks(remoteTasks.map(normalizeTask));
+      const payload = await fetchTasks(accessCode);
+      setSources(payload.sources || []);
+      setTasks(payload.tasks.map(normalizeTask));
       setDataMode('airtable');
       setNeedsAccessCode(false);
       if (accessCode) localStorage.setItem(ACCESS_CODE_KEY, accessCode);
@@ -174,6 +179,7 @@ function App() {
         const text = `${task.title} ${task.notes} ${task.area}`.toLowerCase();
         return (
           text.includes(search.trim().toLowerCase()) &&
+          (sourceFilter === 'all' || task.source_id === sourceFilter) &&
           (aspectFilter === 'all' || task.aspect === aspectFilter) &&
           (priorityFilter === 'all' || task.priority === priorityFilter) &&
           (tagFilter === 'all' || task.tags.includes(tagFilter))
@@ -185,7 +191,7 @@ function App() {
         if (b.due_date) return 1;
         return new Date(b.created_at) - new Date(a.created_at);
       });
-  }, [activeView, aspectFilter, groups, priorityFilter, search, tagFilter, tasks]);
+  }, [activeView, aspectFilter, groups, priorityFilter, search, sourceFilter, tagFilter, tasks]);
 
   function persistLocal(nextTasks) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(nextTasks));
@@ -202,6 +208,7 @@ function App() {
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       completed_at: null,
+      source_id: sourceFilter === 'all' ? sources[0]?.id || '' : sourceFilter,
     });
   }
 
@@ -254,7 +261,8 @@ function App() {
     }
 
     try {
-      await deleteRemoteTask(taskId, accessCode);
+      const task = tasks.find((item) => item.id === taskId);
+      await deleteRemoteTask(task || taskId, accessCode);
       setTasks((current) => current.filter((task) => task.id !== taskId));
       setEditingTask(null);
     } catch (error) {
@@ -313,6 +321,12 @@ function App() {
               <option key={tag} value={tag}>{tag}</option>
             ))}
           </select>
+          <select value={sourceFilter} onChange={(event) => setSourceFilter(event.target.value)}>
+            <option value="all">All sources</option>
+            {sources.map((source) => (
+              <option key={source.id} value={source.id}>{source.label}</option>
+            ))}
+          </select>
         </div>
       </section>
 
@@ -347,7 +361,13 @@ function App() {
       <BottomNav items={navItems} activeView={activeView} onChange={setActiveView} />
 
       {editingTask && (
-        <TaskEditor task={editingTask} onSave={saveTask} onDelete={removeTask} onClose={() => setEditingTask(null)} />
+        <TaskEditor
+          task={editingTask}
+          sources={sources}
+          onSave={saveTask}
+          onDelete={removeTask}
+          onClose={() => setEditingTask(null)}
+        />
       )}
 
       {activeView === 'settings' && (
@@ -410,7 +430,10 @@ function TaskCard({ task, onOpen, onComplete, onToday, onDefer }) {
       <button className="task-body" type="button" onClick={onOpen}>
         <span className="task-title">{task.title}</span>
         <span className="task-meta">
-          {task.aspect}{task.area ? ` / ${task.area}` : ''}{task.due_date ? ` / ${task.due_date}` : ''}
+          {task.aspect}
+          {task.source_label ? ` / ${task.source_label}` : ''}
+          {task.area ? ` / ${task.area}` : ''}
+          {task.due_date ? ` / ${task.due_date}` : ''}
         </span>
         {task.tags.length > 0 && (
           <span className="tag-list">
@@ -432,7 +455,7 @@ function TaskCard({ task, onOpen, onComplete, onToday, onDefer }) {
   );
 }
 
-function TaskEditor({ task, onSave, onDelete, onClose }) {
+function TaskEditor({ task, sources, onSave, onDelete, onClose }) {
   const [draft, setDraft] = useState(normalizeTask(task));
   const setField = (field, value) => setDraft((current) => ({ ...current, [field]: value }));
 
@@ -455,6 +478,16 @@ function TaskEditor({ task, onSave, onDelete, onClose }) {
         </div>
         <label>Area or project<input value={draft.area} onChange={(event) => setField('area', event.target.value)} /></label>
         <label>Tags<input value={draft.tags.join(', ')} onChange={(event) => setField('tags', event.target.value.split(',').map((tag) => tag.trim()).filter(Boolean))} /></label>
+        {sources.length > 1 && (
+          <label>
+            Airtable source
+            <select value={draft.source_id || sources[0]?.id || ''} onChange={(event) => setField('source_id', event.target.value)}>
+              {sources.map((source) => (
+                <option key={source.id} value={source.id}>{source.label}</option>
+              ))}
+            </select>
+          </label>
+        )}
         <label className="checkbox-label"><input type="checkbox" checked={draft.is_recurring} onChange={(event) => setField('is_recurring', event.target.checked)} />Recurring task</label>
         <footer>
           {draft.id && <button type="button" className="danger-button" onClick={() => onDelete(draft.id)}>Delete</button>}

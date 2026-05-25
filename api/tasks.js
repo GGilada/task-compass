@@ -18,14 +18,50 @@ const FIELD_ALIASES = {
 
 function requireConfig() {
   const token = process.env.AIRTABLE_TOKEN;
-  const baseId = process.env.AIRTABLE_BASE_ID;
-  const tableName = process.env.AIRTABLE_TABLE_NAME || 'Tasks';
+  const sources = parseSources(process.env.AIRTABLE_SOURCES);
 
-  if (!token || !baseId) {
-    throw new Error('Airtable is not configured. Add AIRTABLE_TOKEN and AIRTABLE_BASE_ID.');
+  if (!sources.length && process.env.AIRTABLE_BASE_ID) {
+    sources.push({
+      id: 'primary',
+      label: process.env.AIRTABLE_TABLE_NAME || 'Tasks',
+      baseId: process.env.AIRTABLE_BASE_ID,
+      tableName: process.env.AIRTABLE_TABLE_NAME || 'Tasks',
+    });
   }
 
-  return { token, baseId, tableName };
+  if (!token || !sources.length) {
+    throw new Error('Airtable is not configured. Add AIRTABLE_TOKEN and AIRTABLE_SOURCES.');
+  }
+
+  return { token, sources };
+}
+
+function parseSources(rawSources) {
+  if (!rawSources) return [];
+
+  return rawSources
+    .split(';')
+    .map((source, index) => {
+      const [label, baseId, tableName] = source.split('|').map((part) => part?.trim());
+      if (!baseId || !tableName) return null;
+
+      return {
+        id: sourceId(baseId, tableName, index),
+        label: label || tableName,
+        baseId,
+        tableName,
+      };
+    })
+    .filter(Boolean);
+}
+
+function sourceId(baseId, tableName, index = 0) {
+  return `${baseId}:${tableName}:${index}`;
+}
+
+function getSource(config, sourceIdToFind) {
+  if (!sourceIdToFind) return config.sources[0];
+  return config.sources.find((source) => source.id === sourceIdToFind) || config.sources[0];
 }
 
 function checkAccessCode(req) {
@@ -134,11 +170,11 @@ function taskToFields(task, fieldMap) {
   return fields;
 }
 
-async function callAirtable(config, path, options = {}) {
+async function callAirtable(token, path, options = {}) {
   const response = await fetch(path, {
     ...options,
     headers: {
-      authorization: `Bearer ${config.token}`,
+      authorization: `Bearer ${token}`,
       'content-type': 'application/json',
       ...(options.headers || {}),
     },
@@ -155,12 +191,12 @@ async function callAirtable(config, path, options = {}) {
   return payload;
 }
 
-async function getFieldMap(config) {
-  const payload = await callAirtable(config, metadataUrl(config));
-  const table = (payload.tables || []).find((item) => item.name === config.tableName);
+async function getFieldMap(token, source) {
+  const payload = await callAirtable(token, metadataUrl(source));
+  const table = (payload.tables || []).find((item) => item.name === source.tableName);
 
   if (!table) {
-    throw new Error(`Airtable table "${config.tableName}" was not found.`);
+    throw new Error(`Airtable table "${source.tableName}" was not found.`);
   }
 
   const names = new Set(table.fields.map((field) => field.name));
@@ -189,17 +225,23 @@ async function getFieldMap(config) {
   return fieldMap;
 }
 
-async function listTasks(config, fieldMap) {
+async function listTasks(config, source, fieldMap) {
   const tasks = [];
   let offset = '';
 
   do {
-    const url = new URL(airtableUrl(config));
+    const url = new URL(airtableUrl(source));
     url.searchParams.set('pageSize', '100');
     if (offset) url.searchParams.set('offset', offset);
 
-    const payload = await callAirtable(config, url.toString());
-    tasks.push(...(payload.records || []).map((record) => recordToTask(record, fieldMap)));
+    const payload = await callAirtable(config.token, url.toString());
+    tasks.push(
+      ...(payload.records || []).map((record) => ({
+        ...recordToTask(record, fieldMap),
+        source_id: source.id,
+        source_label: source.label,
+      })),
+    );
     offset = payload.offset;
   } while (offset);
 
@@ -225,32 +267,58 @@ export default async function handler(req, res) {
   }
 
   try {
-    const fieldMap = await getFieldMap(config);
-
     if (req.method === 'GET') {
-      const tasks = await listTasks(config, fieldMap);
-      send(res, 200, { tasks });
+      const sourceResults = await Promise.all(
+        config.sources.map(async (source) => {
+          const fieldMap = await getFieldMap(config.token, source);
+          return listTasks(config, source, fieldMap);
+        }),
+      );
+      send(res, 200, {
+        sources: config.sources.map(({ id, label, baseId, tableName }) => ({
+          id,
+          label,
+          baseId,
+          tableName,
+        })),
+        tasks: sourceResults.flat(),
+      });
       return;
     }
+
+    const source = getSource(config, req.body?.source_id || req.query.source_id);
+    const fieldMap = await getFieldMap(config.token, source);
 
     if (req.method === 'POST') {
       const now = new Date().toISOString();
       const task = { ...req.body, created_at: now, updated_at: now };
-      const payload = await callAirtable(config, airtableUrl(config), {
+      const payload = await callAirtable(config.token, airtableUrl(source), {
         method: 'POST',
         body: JSON.stringify({ fields: taskToFields(task, fieldMap), typecast: true }),
       });
-      send(res, 200, { task: recordToTask(payload, fieldMap) });
+      send(res, 200, {
+        task: {
+          ...recordToTask(payload, fieldMap),
+          source_id: source.id,
+          source_label: source.label,
+        },
+      });
       return;
     }
 
     if (req.method === 'PATCH') {
       const task = { ...req.body, updated_at: new Date().toISOString() };
-      const payload = await callAirtable(config, airtableUrl(config, task.id), {
+      const payload = await callAirtable(config.token, airtableUrl(source, task.id), {
         method: 'PATCH',
         body: JSON.stringify({ fields: taskToFields(task, fieldMap), typecast: true }),
       });
-      send(res, 200, { task: recordToTask(payload, fieldMap) });
+      send(res, 200, {
+        task: {
+          ...recordToTask(payload, fieldMap),
+          source_id: source.id,
+          source_label: source.label,
+        },
+      });
       return;
     }
 
@@ -261,7 +329,7 @@ export default async function handler(req, res) {
         return;
       }
 
-      await callAirtable(config, airtableUrl(config, taskId), { method: 'DELETE' });
+      await callAirtable(config.token, airtableUrl(source, taskId), { method: 'DELETE' });
       send(res, 200, { ok: true });
       return;
     }

@@ -21,7 +21,10 @@ export async function fetchTasks(accessCode) {
     headers: accessCode ? { 'x-app-code': accessCode } : {},
   });
   const payload = await parseResponse(response);
-  return payload.tasks || [];
+  return {
+    tasks: payload.tasks || [],
+    sources: payload.sources || [],
+  };
 }
 
 export async function saveRemoteTask(task, accessCode) {
@@ -38,7 +41,10 @@ export async function saveRemoteTask(task, accessCode) {
 }
 
 export async function deleteRemoteTask(taskId, accessCode) {
-  const response = await fetch(`/api/tasks?id=${encodeURIComponent(taskId)}`, {
+  const id = typeof taskId === 'string' ? taskId : taskId.id;
+  const sourceId = typeof taskId === 'string' ? '' : taskId.source_id;
+  const sourceQuery = sourceId ? `&source_id=${encodeURIComponent(sourceId)}` : '';
+  const response = await fetch(`/api/tasks?id=${encodeURIComponent(id)}${sourceQuery}`, {
     method: 'DELETE',
     headers: accessCode ? { 'x-app-code': accessCode } : {},
   });
